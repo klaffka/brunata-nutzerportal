@@ -1,0 +1,19 @@
+# secrets
+.env
+notes
+test/ha-config/secrets.yaml
+
+# python
+venv/
+__pycache__/
+*.pyc
+
+# HA runtime state (contains config entries incl. passwords + recorder data)
+test/ha-config/home-assistant_v2.db*
+test/ha-config/home-assistant.log*
+test/ha-config/.storage/
+test/ha-config/.cache/
+test/ha-config/.cloud/
+test/ha-config/.ha_run.lock
+test/ha-config/.HA_VERSION
+test/ha-config/custom_components/**/__pycache__/

@@ -1,0 +1,14 @@
+{
+  "domain": "brunata_nutzerportal",
+  "name": "BRUdirekt (Brunata München)",
+  "config_flow": true,
+  "codeowners": [
+    "@klaffka"
+  ],
+  "documentation": "https://github.com/klaffka/brunata-nutzerportal",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "brunata-nutzerportal-api==0.3.0"
+  ],
+  "version": "0.3.0"
+}

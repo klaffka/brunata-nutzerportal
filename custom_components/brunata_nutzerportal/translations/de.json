@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BRUdirekt",
+        "description": "Melde dich mit deinen BRUdirekt/Nutzerportal-Zugangsdaten an.",
+        "data": {
+          "username": "E-Mail",
+          "password": "Passwort",
+          "base_url": "Portal-URL",
+          "sap_client": "SAP Client"
+        }
+      }
+    },
+    "error": {
+      "auth": "Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen.",
+      "unknown": "Unerwarteter Fehler. Siehe Logs."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BRUdirekt — Einstellungen",
+        "data": {
+          "update_hours": "Aktualisierungsintervall (Stunden)"
+        }
+      }
+    }
+  }
+}

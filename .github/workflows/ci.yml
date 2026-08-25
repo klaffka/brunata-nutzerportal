@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "brunata-nutzerportal-api==0.3.0"
+
+      - name: Syntax check
+        run: python -m compileall -q custom_components main.py test
+
+      - name: JSON + manifest validation
+        run: |
+          python - <<'EOF'
+          import json, pathlib
+          base = pathlib.Path("custom_components/brunata_nutzerportal")
+          files = [base / "manifest.json", base / "strings.json", pathlib.Path("hacs.json")]
+          files += sorted((base / "translations").glob("*.json"))
+          for p in files:
+              json.loads(p.read_text())
+          m = json.loads((base / "manifest.json").read_text())
+          for field in ("domain", "name", "version", "documentation", "codeowners", "requirements"):
+              assert field in m, f"manifest missing {field}"
+          assert m["domain"] == "brunata_nutzerportal"
+          print("JSON + manifest OK:", m["version"])
+          EOF
+
+      - name: Coordinator logic tests
+        run: python test/test_coordinator_logic.py

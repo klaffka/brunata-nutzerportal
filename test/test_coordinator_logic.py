@@ -70,7 +70,7 @@ sys.modules["homeassistant.exceptions"] = ha_exc
 sys.modules["homeassistant.helpers"] = ha_helpers
 sys.modules["homeassistant.helpers.update_coordinator"] = ha_uc
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "ha-config" / "custom_components"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "custom_components"))
 import importlib
 
 from brunata_api import ReadingKind

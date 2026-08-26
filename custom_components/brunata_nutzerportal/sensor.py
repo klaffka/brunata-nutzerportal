@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -8,6 +7,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.components.sensor.const import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -31,8 +31,8 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     data = coordinator.data or {}
 
-    has_heating = bool(data.get("has_heating", True))
-    has_hotwater = bool(data.get("has_hotwater", True))
+    has_heating = bool(data.get("has_heating", False))
+    has_hotwater = bool(data.get("has_hotwater", False))
 
     entities: list[SensorEntity] = []
 
@@ -40,12 +40,16 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
     if has_heating:
         entities += [
             BrunataYtdSensor(coordinator, entry, "Heizung (YTD)", "heating_ytd"),
-            BrunataLatestMonthlySensor(coordinator, entry, "Heizung (letzter Monat)", "heating_monthly"),
+            BrunataLatestMonthlySensor(
+                coordinator, entry, "Heizung (letzter Monat)", "heating_monthly"
+            ),
         ]
     if has_hotwater:
         entities += [
             BrunataYtdSensor(coordinator, entry, "Warmwasser (YTD)", "hotwater_ytd"),
-            BrunataLatestMonthlySensor(coordinator, entry, "Warmwasser (letzter Monat)", "hotwater_monthly"),
+            BrunataLatestMonthlySensor(
+                coordinator, entry, "Warmwasser (letzter Monat)", "hotwater_monthly"
+            ),
         ]
 
     # Meter readings: one per cost_type
@@ -95,6 +99,7 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
 
 class _BrunataBase(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry: ConfigEntry, name: str, key: str):
         super().__init__(coordinator)
@@ -120,6 +125,7 @@ class _BrunataBase(CoordinatorEntity, SensorEntity):
 
 
 class BrunataYtdSensor(_BrunataBase):
+    _attr_entity_category = None
     @property
     def native_value(self):
         obj = (self.coordinator.data or {}).get(self._key)
@@ -159,6 +165,7 @@ class BrunataYtdSensor(_BrunataBase):
 
 
 class BrunataLatestMonthlySensor(_BrunataBase):
+    _attr_entity_category = None
     @property
     def native_value(self):
         series = (self.coordinator.data or {}).get(self._key) or []
@@ -192,6 +199,7 @@ class BrunataLatestMonthlySensor(_BrunataBase):
 
 class BrunataMeterSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
         super().__init__(coordinator)
@@ -250,6 +258,7 @@ class BrunataMeterSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataComparisonSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
         super().__init__(coordinator)
@@ -296,6 +305,7 @@ class BrunataComparisonSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataForecastSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
         super().__init__(coordinator)
@@ -343,6 +353,7 @@ class BrunataForecastSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataRoomSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry: ConfigEntry, *, name: str, cost_type: str, room_id: str):
         super().__init__(coordinator)

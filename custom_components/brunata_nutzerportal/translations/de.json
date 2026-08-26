@@ -10,11 +10,21 @@
           "base_url": "Portal-URL",
           "sap_client": "SAP Client"
         }
+      },
+      "reauth_confirm": {
+        "title": "BRUdirekt — Neu anmelden",
+        "description": "Das Portal hat die gespeicherten Zugangsdaten abgelehnt. Bitte das aktuelle Passwort für {username} eingeben.",
+        "data": {
+          "password": "Passwort"
+        }
       }
     },
     "error": {
       "auth": "Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen.",
       "unknown": "Unerwarteter Fehler. Siehe Logs."
+    },
+    "abort": {
+      "reauth_successful": "Neuanmeldung erfolgreich."
     }
   },
   "options": {

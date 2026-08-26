@@ -18,7 +18,7 @@ Personal project: fetch heat/hot-water consumption from the Brunata München cus
 - `venv/bin/python test/test_coordinator_logic.py` — coordinator logic tests (mocked client + stubbed HA modules).
 - `docker compose -f test/docker-compose.yaml up -d` — start HA, then use http://localhost:8123; logs in `test/ha-config/home-assistant.log` (component logging already set to debug in `configuration.yaml`).
 - `docker restart homeassistant` — required after ANY change to the integration code (custom components don't reload).
-- Release flow: bump `manifest.json` `version`, commit, tag `v<version>`, push tags. The `Release` workflow then creates the GitHub Release automatically (and aborts if manifest version != tag). HACS tracks git tags. CI (`.github/workflows/ci.yml`) runs on push/PR: syntax check, JSON/manifest validation, logic tests.
+- Release flow: bump `manifest.json` `version`, commit, tag `v<version>`, push tags. The `Release` workflow then creates the GitHub Release automatically (and aborts if manifest version != tag). HACS tracks git tags. CI (`.github/workflows/ci.yml`) runs on push/PR: ruff lint, syntax check, JSON/manifest validation, logic tests, plus a `hassfest` job that validates the integration against `home-assistant/core` (pinned to an HA release, `script/hassfest` via sparse checkout).
 
 ## Gotchas
 

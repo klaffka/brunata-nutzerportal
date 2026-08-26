@@ -1,11 +1,13 @@
-import os
-import uuid
-import json
 import base64
+import json
+import os
 import re
+import uuid
 from urllib.parse import urlparse
+
+import dotenv
 import requests
-import dotenv 
+
 dotenv.load_dotenv()  # .env Datei laden, damit os.environ die Variablen hat
 BASE = "https://nutzerportal.brunata-muenchen.de"
 SAP_CLIENT = "201"
@@ -70,7 +72,10 @@ def extract_first_json(text: str) -> dict:
     # (Wenn du willst, baue ich dir auch einen sauberen Multipart-Parser.)
     m = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if not m:
-        raise RuntimeError("Kein JSON in Batch-Response gefunden. Wahrscheinlich Login fehlgeschlagen oder HTML/Redirect.")
+        raise RuntimeError(
+            "Kein JSON in Batch-Response gefunden. "
+            "Wahrscheinlich Login fehlgeschlagen oder HTML/Redirect."
+        )
     return json.loads(m.group(0))
 
 def normalize_service_url(raw: str) -> str:
@@ -94,7 +99,11 @@ with requests.Session() as s:
     })
 
     # wichtig: sap-usercontext cookie wie bei dir
-    s.cookies.set("sap-usercontext", f"sap-client={SAP_CLIENT}", domain="nutzerportal.brunata-muenchen.de")
+    s.cookies.set(
+        "sap-usercontext",
+        f"sap-client={SAP_CLIENT}",
+        domain="nutzerportal.brunata-muenchen.de",
+    )
 
     # Optional: Portal-Seite einmal laden (manchmal setzt das weitere Cookies)
     s.get(f"{BASE}/np_anmeldung/index.html?sap-language=DE")
@@ -121,14 +130,17 @@ with requests.Session() as s:
 
     data = extract_first_json(r.text)
 
-    # Erwartete Struktur ist meist: {"d": {"Userid": "...", "Password": "...", "Serviceurl": "...", ...}}
+    # Erwartete Struktur: {"d": {"Userid", "Password", "Serviceurl", ...}}
     d = data.get("d") or {}
     userid = d.get("Userid")
     pw_resp_b64 = d.get("Password")
     serviceurl = d.get("Serviceurl")
 
     if not userid or not pw_resp_b64:
-        raise RuntimeError(f"Login-Response hat keine Userid/Password Felder.\nKeys: {list(d.keys())}\nRaw JSON: {data}")
+        raise RuntimeError(
+            "Login-Response hat keine Userid/Password Felder.\n"
+            f"Keys: {list(d.keys())}\nRaw JSON: {data}"
+        )
 
     sap_pw = base64.b64decode(pw_resp_b64).decode("utf-8", errors="replace")
     print("SAP BasicAuth User:", userid)
@@ -141,6 +153,6 @@ with requests.Session() as s:
 
     # Ab hier: alle weiteren OData Calls mit Basic Auth
     # Beispiel: $metadata von einem Service (muss du im Network Tab finden)
-    # meta = s.get(f"{BASE}/sap/opu/odata/bme/NP_DASHBOARD_SRV_01/$metadata?sap-client={SAP_CLIENT}",
-    #              auth=(userid, sap_pw))
+    # meta = s.get(f"{BASE}/sap/opu/odata/bme/NP_DASHBOARD_SRV_01/$metadata?...",
+    #              auth=(userid, sap_pw), params={"sap-client": SAP_CLIENT})
     # print(meta.status_code)

@@ -1,21 +1,22 @@
 from __future__ import annotations
 
+from typing import Any
+
 import voluptuous as vol
-
-from homeassistant import config_entries
-
 from brunata_api.errors import LoginError
+from homeassistant import config_entries
 
 from .client_factory import async_create_brunata_client
 from .const import (
-    DOMAIN,
     CONF_BASE_URL,
-    CONF_USERNAME,
     CONF_PASSWORD,
     CONF_SAP_CLIENT,
+    CONF_USERNAME,
     DEFAULT_BASE_URL,
     DEFAULT_SAP_CLIENT,
+    DOMAIN,
 )
+from .options_flow import BrunataOptionsFlow
 
 
 async def _validate(hass, data: dict) -> None:
@@ -35,6 +36,7 @@ async def _validate(hass, data: dict) -> None:
 
 class BrunataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    OPTIONS_FLOW = BrunataOptionsFlow
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -47,6 +49,9 @@ class BrunataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception:
                 errors["base"] = "unknown"
             else:
+                username_cf = user_input[CONF_USERNAME].casefold()
+                self.async_set_unique_id(username_cf)
+                self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title="BRUdirekt",
                     data=user_input,
@@ -62,3 +67,36 @@ class BrunataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]):
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            new_data: dict[str, Any] = {**reauth_entry.data, **user_input}
+            try:
+                await _validate(self.hass, new_data)
+            except LoginError:
+                errors["base"] = "auth"
+            except Exception:
+                errors["base"] = "unknown"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    reauth_entry, data=new_data
+                )
+                await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        schema = vol.Schema({vol.Required(CONF_PASSWORD): str})
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "username": reauth_entry.data[CONF_USERNAME],
+            },
+        )

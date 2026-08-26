@@ -3,26 +3,36 @@
     "step": {
       "user": {
         "title": "BRUdirekt",
-        "description": "Melde dich mit deinen BRUdirekt/Nutzerportal-Zugangsdaten an.",
+        "description": "Sign in with your BRUdirekt / Nutzerportal credentials.",
         "data": {
-          "username": "E-Mail",
-          "password": "Passwort",
-          "base_url": "Portal-URL",
-          "sap_client": "SAP Client"
+          "username": "Email",
+          "password": "Password",
+          "base_url": "Portal URL",
+          "sap_client": "SAP client"
+        }
+      },
+      "reauth_confirm": {
+        "title": "BRUdirekt — Re-authenticate",
+        "description": "The portal rejected the stored credentials. Enter the current password for {username}.",
+        "data": {
+          "password": "Password"
         }
       }
     },
     "error": {
-      "auth": "Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen.",
-      "unknown": "Unerwarteter Fehler. Siehe Logs."
+      "auth": "Login failed. Please check your credentials.",
+      "unknown": "Unexpected error. Check the logs."
+    },
+    "abort": {
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "BRUdirekt — Einstellungen",
+        "title": "BRUdirekt — Options",
         "data": {
-          "update_hours": "Aktualisierungsintervall (Stunden)"
+          "update_hours": "Update interval (hours)"
         }
       }
     }

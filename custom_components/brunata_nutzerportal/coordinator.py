@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-
 from brunata_api import BrunataClient, ReadingKind
 from brunata_api.errors import LoginError
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_UPDATE_INTERVAL_HOURS
 from .debug_diag import diagnose_dashboard_batch

@@ -1,0 +1,11 @@
+line-length = 100
+target-version = "py313"
+
+exclude = ["venv"]
+
+[lint]
+select = ["E", "F", "W", "I"]
+
+[lint.per-file-ignores]
+# test_coordinator_logic.py stubs sys.modules before importing the integration
+"test/*" = ["E402"]

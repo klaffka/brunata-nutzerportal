@@ -73,7 +73,6 @@ sys.modules["homeassistant.helpers.update_coordinator"] = ha_uc
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "custom_components"))
 import importlib
 
-from brunata_api import ReadingKind
 from brunata_api.errors import LoginError
 
 mod = importlib.import_module("brunata_nutzerportal.coordinator")
@@ -149,11 +148,13 @@ def check(name, cond, extra=""):
 
 async def main():
     # 1. login LoginError -> ConfigEntryAuthFailed
-    c = make_coordinator(FakeClient(login_exc=LoginError("Empty UserContextSet results (login likely failed).")))
+    c = make_coordinator(
+        FakeClient(login_exc=LoginError("Empty UserContextSet results (login likely failed)."))
+    )
     try:
         await c._async_update_data()
         check("login LoginError -> ConfigEntryAuthFailed", False)
-    except ConfigEntryAuthFailed as e:
+    except ConfigEntryAuthFailed:
         check("login LoginError -> ConfigEntryAuthFailed", True)
     except Exception as e:
         check("login LoginError -> ConfigEntryAuthFailed", False, repr(e))

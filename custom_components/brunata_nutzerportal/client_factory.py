@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from functools import partial
 
-from homeassistant.core import HomeAssistant
-
 from brunata_api import BrunataClient
+from homeassistant.core import HomeAssistant
 
 
 async def async_create_brunata_client(

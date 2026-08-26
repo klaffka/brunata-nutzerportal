@@ -1,3 +1,2 @@
-pyodata
 requests
 python-dotenv

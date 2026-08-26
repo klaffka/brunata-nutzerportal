@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import voluptuous as vol
-
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 
 from .const import CONF_UPDATE_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS
 

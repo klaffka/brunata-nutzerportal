@@ -8,13 +8,13 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .client_factory import async_create_brunata_client
 from .const import (
-    DOMAIN,
     CONF_BASE_URL,
     CONF_PASSWORD,
     CONF_SAP_CLIENT,
-    CONF_USERNAME,
     CONF_UPDATE_HOURS,
+    CONF_USERNAME,
     DEFAULT_UPDATE_INTERVAL_HOURS,
+    DOMAIN,
 )
 from .coordinator import BrunataCoordinator
 
@@ -55,15 +55,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await client.aclose()
+        raise
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    data = hass.data[DOMAIN].pop(entry.entry_id)
-    client = data["client"]
-
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    await client.aclose()
+    if unload_ok:
+        data = hass.data[DOMAIN].pop(entry.entry_id, {})
+        client = data.get("client")
+        if client:
+            await client.aclose()
+
     return unload_ok

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .client_factory import async_create_brunata_client
 from .const import (
@@ -21,6 +26,49 @@ from .coordinator import BrunataCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = ["sensor"]
+
+SERVICE_UPDATE_COORDINATOR = "update_coordinator"
+
+
+async def async_setup(hass: HomeAssistant) -> bool:
+    hass.data.setdefault(DOMAIN, {})
+
+    async def _async_handle_update_service(call: ServiceCall) -> None:
+        entry_ids: set[str]
+        entity_ids = call.data.get(ATTR_ENTITY_ID)
+        device_ids = call.data.get(ATTR_DEVICE_ID)
+
+        if not entity_ids and not device_ids:
+            entry_ids = {
+                entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)
+            }
+        else:
+            entry_ids = set()
+            if entity_ids:
+                entity_registry = er.async_get(hass)
+                for entity_id in entity_ids:
+                    registered = entity_registry.async_get(entity_id)
+                    if registered and registered.platform == DOMAIN:
+                        entry_ids.add(registered.config_entry_id)
+            if device_ids:
+                device_registry = dr.async_get(hass)
+                for device_id in device_ids:
+                    device = device_registry.async_get(device_id)
+                    if device:
+                        entry_ids.update(device.config_entries)
+
+        for entry_id in entry_ids:
+            data: dict[str, Any] | None = hass.data[DOMAIN].get(entry_id)
+            if data:
+                data["coordinator"].async_request_refresh()
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPDATE_COORDINATOR,
+        _async_handle_update_service,
+        schema=vol.Schema({}),
+    )
+    return True
 
 
 async def _async_update_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

@@ -36,5 +36,37 @@
         }
       }
     }
+  },
+  "entity": {
+    "heating_ytd": {
+      "name": "Heizung (YTD)"
+    },
+    "heating_monthly": {
+      "name": "Heizung (letzter Monat)"
+    },
+    "hotwater_ytd": {
+      "name": "Warmwasser (YTD)"
+    },
+    "hotwater_monthly": {
+      "name": "Warmwasser (letzter Monat)"
+    },
+    "meter": {
+      "name": "Zählerstand {ct}"
+    },
+    "comparison": {
+      "name": "Vergleich {ct}"
+    },
+    "forecast": {
+      "name": "Prognose {ct}"
+    },
+    "room": {
+      "name": "Raum {room} ({ct})"
+    }
+  },
+  "services": {
+    "update_coordinator": {
+      "name": "Coordinator aktualisieren",
+      "description": "Erzwingt einen sofortigen Datenabruf vom Portal."
+    }
   }
 }

@@ -15,6 +15,10 @@ ha_helpers = types.ModuleType("homeassistant.helpers")
 ha_uc = types.ModuleType("homeassistant.helpers.update_coordinator")
 ha_ce = types.ModuleType("homeassistant.config_entries")
 ha_core = types.ModuleType("homeassistant.core")
+ha_const = types.ModuleType("homeassistant.const")
+ha_dr = types.ModuleType("homeassistant.helpers.device_registry")
+ha_er = types.ModuleType("homeassistant.helpers.entity_registry")
+vol = types.ModuleType("voluptuous")
 
 
 class ConfigEntry:
@@ -25,12 +29,32 @@ class HomeAssistant:
     pass
 
 
+class ServiceCall:
+    pass
+
+
+class _Schema:
+    def __init__(self, schema=None):
+        self.schema = schema
+
+
+ha_const.ATTR_ENTITY_ID = "entity_id"
+ha_const.ATTR_DEVICE_ID = "device_id"
+ha_dr.async_get = lambda hass: None
+ha_er.async_get = lambda hass: None
+vol.Schema = _Schema
 ha_ce.ConfigEntry = ConfigEntry
 ha_core.HomeAssistant = HomeAssistant
+ha_core.ServiceCall = ServiceCall
 ha.config_entries = ha_ce
 ha.core = ha_core
+ha.const = ha_const
 sys.modules["homeassistant.config_entries"] = ha_ce
 sys.modules["homeassistant.core"] = ha_core
+sys.modules["homeassistant.const"] = ha_const
+sys.modules["homeassistant.helpers.device_registry"] = ha_dr
+sys.modules["homeassistant.helpers.entity_registry"] = ha_er
+sys.modules["voluptuous"] = vol
 
 
 class ConfigEntryAuthFailed(Exception):

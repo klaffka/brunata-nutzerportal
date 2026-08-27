@@ -27,6 +27,15 @@ def _safe_unit(v) -> str | None:
         return None
 
 
+def _device_info(entry: ConfigEntry) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="BRUdirekt",
+        manufacturer="BRUNATA-METRONA (Portal)",
+        model="Nutzerportal (München)",
+    )
+
+
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     data = coordinator.data or {}
@@ -39,17 +48,13 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
     # Basic
     if has_heating:
         entities += [
-            BrunataYtdSensor(coordinator, entry, "Heizung (YTD)", "heating_ytd"),
-            BrunataLatestMonthlySensor(
-                coordinator, entry, "Heizung (letzter Monat)", "heating_monthly"
-            ),
+            BrunataYtdSensor(coordinator, entry, "heating_ytd"),
+            BrunataLatestMonthlySensor(coordinator, entry, "heating_monthly"),
         ]
     if has_hotwater:
         entities += [
-            BrunataYtdSensor(coordinator, entry, "Warmwasser (YTD)", "hotwater_ytd"),
-            BrunataLatestMonthlySensor(
-                coordinator, entry, "Warmwasser (letzter Monat)", "hotwater_monthly"
-            ),
+            BrunataYtdSensor(coordinator, entry, "hotwater_ytd"),
+            BrunataLatestMonthlySensor(coordinator, entry, "hotwater_monthly"),
         ]
 
     # Meter readings: one per cost_type
@@ -59,19 +64,19 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
             v = meter.get(ct)
             if v is None:
                 continue
-            entities.append(BrunataMeterSensor(coordinator, entry, f"Zählerstand {ct}", ct))
+            entities.append(BrunataMeterSensor(coordinator, entry, ct))
 
     # Comparison: state = your_value
     comp = data.get("comparison") or {}
     if isinstance(comp, dict):
         for ct in sorted(comp.keys()):
-            entities.append(BrunataComparisonSensor(coordinator, entry, f"Vergleich {ct}", ct))
+            entities.append(BrunataComparisonSensor(coordinator, entry, ct))
 
     # Forecast: state = forecast
     fc = data.get("forecast") or {}
     if isinstance(fc, dict):
         for ct in sorted(fc.keys()):
-            entities.append(BrunataForecastSensor(coordinator, entry, f"Prognose {ct}", ct))
+            entities.append(BrunataForecastSensor(coordinator, entry, ct))
 
     # Rooms: one per (cost_type, room_id)
     rooms = data.get("rooms") or {}
@@ -88,9 +93,9 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
                     BrunataRoomSensor(
                         coordinator,
                         entry,
-                        name=f"Raum {room_name} ({ct})",
                         cost_type=str(ct),
                         room_id=str(room_id),
+                        room_name=room_name,
                     )
                 )
 
@@ -99,19 +104,12 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
 
 class _BrunataBase(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry: ConfigEntry, name: str, key: str):
+    def __init__(self, coordinator, entry: ConfigEntry, key: str):
         super().__init__(coordinator)
         self._key = key
-        self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="BRUdirekt",
-            manufacturer="BRUNATA-METRONA (Portal)",
-            model="Nutzerportal (München)",
-        )
+        self._attr_device_info = _device_info(entry)
 
     @property
     def available(self) -> bool:
@@ -120,12 +118,20 @@ class _BrunataBase(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "supported_cost_types": (self.coordinator.data or {}).get("supported_cost_types"),
+            "supported_cost_types": (self.coordinator.data or {}).get(
+                "supported_cost_types"
+            ),
         }
 
 
 class BrunataYtdSensor(_BrunataBase):
+    _attr_translation_key = None
     _attr_entity_category = None
+
+    def __init__(self, coordinator, entry: ConfigEntry, key: str):
+        super().__init__(coordinator, entry, key)
+        self._attr_translation_key = key
+
     @property
     def native_value(self):
         obj = (self.coordinator.data or {}).get(self._key)
@@ -156,16 +162,23 @@ class BrunataYtdSensor(_BrunataBase):
         obj = (self.coordinator.data or {}).get(self._key)
         if obj is None:
             return base
-        base.update({
-            "as_of": obj.as_of.isoformat(),
-            "cost_type": obj.cost_type,
-            "kind": getattr(obj, "kind", None),
-        })
+        base.update(
+            {
+                "as_of": obj.as_of.isoformat(),
+                "cost_type": obj.cost_type,
+                "kind": getattr(obj, "kind", None),
+            }
+        )
         return base
 
 
 class BrunataLatestMonthlySensor(_BrunataBase):
     _attr_entity_category = None
+
+    def __init__(self, coordinator, entry: ConfigEntry, key: str):
+        super().__init__(coordinator, entry, key)
+        self._attr_translation_key = key
+
     @property
     def native_value(self):
         series = (self.coordinator.data or {}).get(self._key) or []
@@ -186,36 +199,36 @@ class BrunataLatestMonthlySensor(_BrunataBase):
         last = _latest(series)
         if last is None:
             return base
-        base.update({
-            "timestamp": last.timestamp.isoformat(),
-            "kind": getattr(last, "kind", None),
-            "months": [
-                {"timestamp": r.timestamp.isoformat(), "value": r.value}
-                for r in sorted(series, key=lambda r: r.timestamp)
-            ],
-        })
+        base.update(
+            {
+                "timestamp": last.timestamp.isoformat(),
+                "kind": getattr(last, "kind", None),
+                "months": [
+                    {"timestamp": r.timestamp.isoformat(), "value": r.value}
+                    for r in sorted(series, key=lambda r: r.timestamp)
+                ],
+            }
+        )
         return base
 
 
 class BrunataMeterSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_translation_key = "meter"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
+    def __init__(self, coordinator, entry: ConfigEntry, cost_type: str):
         super().__init__(coordinator)
         self._ct = cost_type
-        self._attr_name = name
+        self._attr_translation_placeholders = {"ct": cost_type}
         self._attr_unique_id = f"{entry.entry_id}_meter_{cost_type}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="BRUdirekt",
-            manufacturer="BRUNATA-METRONA (Portal)",
-            model="Nutzerportal (München)",
-        )
+        self._attr_device_info = _device_info(entry)
 
     @property
     def _obj(self):
-        return ((self.coordinator.data or {}).get("meter_readings") or {}).get(self._ct)
+        return (
+            (self.coordinator.data or {}).get("meter_readings") or {}
+        ).get(self._ct)
 
     @property
     def available(self) -> bool:
@@ -258,23 +271,21 @@ class BrunataMeterSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataComparisonSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_translation_key = "comparison"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
+    def __init__(self, coordinator, entry: ConfigEntry, cost_type: str):
         super().__init__(coordinator)
         self._ct = cost_type
-        self._attr_name = name
+        self._attr_translation_placeholders = {"ct": cost_type}
         self._attr_unique_id = f"{entry.entry_id}_comparison_{cost_type}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="BRUdirekt",
-            manufacturer="BRUNATA-METRONA (Portal)",
-            model="Nutzerportal (München)",
-        )
+        self._attr_device_info = _device_info(entry)
 
     @property
     def _obj(self):
-        return ((self.coordinator.data or {}).get("comparison") or {}).get(self._ct)
+        return (
+            (self.coordinator.data or {}).get("comparison") or {}
+        ).get(self._ct)
 
     @property
     def available(self) -> bool:
@@ -305,23 +316,21 @@ class BrunataComparisonSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataForecastSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_translation_key = "forecast"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry: ConfigEntry, name: str, cost_type: str):
+    def __init__(self, coordinator, entry: ConfigEntry, cost_type: str):
         super().__init__(coordinator)
         self._ct = cost_type
-        self._attr_name = name
+        self._attr_translation_placeholders = {"ct": cost_type}
         self._attr_unique_id = f"{entry.entry_id}_forecast_{cost_type}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="BRUdirekt",
-            manufacturer="BRUNATA-METRONA (Portal)",
-            model="Nutzerportal (München)",
-        )
+        self._attr_device_info = _device_info(entry)
 
     @property
     def _obj(self):
-        return ((self.coordinator.data or {}).get("forecast") or {}).get(self._ct)
+        return (
+            (self.coordinator.data or {}).get("forecast") or {}
+        ).get(self._ct)
 
     @property
     def available(self) -> bool:
@@ -353,20 +362,24 @@ class BrunataForecastSensor(CoordinatorEntity, SensorEntity):
 
 class BrunataRoomSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
+    _attr_translation_key = "room"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, coordinator, entry: ConfigEntry, *, name: str, cost_type: str, room_id: str):
+    def __init__(
+        self,
+        coordinator,
+        entry: ConfigEntry,
+        *,
+        cost_type: str,
+        room_id: str,
+        room_name: str,
+    ):
         super().__init__(coordinator)
         self._ct = cost_type
         self._room_id = room_id
-        self._attr_name = name
+        self._attr_translation_placeholders = {"ct": cost_type, "room": room_name}
         self._attr_unique_id = f"{entry.entry_id}_room_{cost_type}_{room_id}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="BRUdirekt",
-            manufacturer="BRUNATA-METRONA (Portal)",
-            model="Nutzerportal (München)",
-        )
+        self._attr_device_info = _device_info(entry)
 
     @property
     def _obj(self):

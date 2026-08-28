@@ -1,12 +1,11 @@
 {
   "domain": "brunata_nutzerportal",
-  "name": "BRUdirekt (Brunata M\u00fcnchen)",
+  "name": "BRUdirekt (Brunata München)",
   "codeowners": [
     "@klaffka"
   ],
   "config_flow": true,
   "documentation": "https://github.com/klaffka/brunata-nutzerportal",
-  "homeassistant": ">=2024.1.0",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/klaffka/brunata-nutzerportal/issues",
   "loggers": [

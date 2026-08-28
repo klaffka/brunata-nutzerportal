@@ -38,29 +38,31 @@
     }
   },
   "entity": {
-    "heating_ytd": {
-      "name": "Heizung (YTD)"
-    },
-    "heating_monthly": {
-      "name": "Heizung (letzter Monat)"
-    },
-    "hotwater_ytd": {
-      "name": "Warmwasser (YTD)"
-    },
-    "hotwater_monthly": {
-      "name": "Warmwasser (letzter Monat)"
-    },
-    "meter": {
-      "name": "Zählerstand {ct}"
-    },
-    "comparison": {
-      "name": "Vergleich {ct}"
-    },
-    "forecast": {
-      "name": "Prognose {ct}"
-    },
-    "room": {
-      "name": "Raum {room} ({ct})"
+    "sensor": {
+      "heating_ytd": {
+        "name": "Heizung (YTD)"
+      },
+      "heating_monthly": {
+        "name": "Heizung (letzter Monat)"
+      },
+      "hotwater_ytd": {
+        "name": "Warmwasser (YTD)"
+      },
+      "hotwater_monthly": {
+        "name": "Warmwasser (letzter Monat)"
+      },
+      "meter": {
+        "name": "Zählerstand {ct}"
+      },
+      "comparison": {
+        "name": "Vergleich {ct}"
+      },
+      "forecast": {
+        "name": "Prognose {ct}"
+      },
+      "room": {
+        "name": "Raum {room} ({ct})"
+      }
     }
   },
   "services": {

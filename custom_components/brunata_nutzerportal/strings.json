@@ -21,6 +21,7 @@
     },
     "error": {
       "auth": "Login failed. Please check your credentials.",
+      "invalid_url": "The portal URL must be a valid HTTPS URL.",
       "unknown": "Unexpected error. Check the logs."
     },
     "abort": {
@@ -68,7 +69,13 @@
   "services": {
     "update_coordinator": {
       "name": "Update coordinator",
-      "description": "Force an immediate data refresh from the portal."
+      "description": "Force an immediate data refresh from the portal.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "The BRUdirekt account to refresh."
+        }
+      }
     }
   }
 }

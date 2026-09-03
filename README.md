@@ -22,6 +22,8 @@ Jahresprognose und Raumaufschlüsselung.
 - Auth-Fehler werden sauber als Re-Auth erkannt; temporäre Fehler führen zu automatischen
   Retry-Versuchen (`ConfigEntryNotReady`)
 - Update-Intervall pro Eintrag einstellbar (Options-Flow, Standard: 6 h)
+- Später im Portal auftauchende Kostentypen, Zähler und Räume werden ohne erneutes Einrichten
+  automatisch als Entitäten ergänzt
 
 ## Voraussetzungen
 
@@ -48,6 +50,8 @@ Jahresprognose und Raumaufschlüsselung.
 Unter *Einstellungen → Geräte & Dienste → Integrationen hinzufügen* **BRUdirekt (Brunata München)**
 auswählen und mit E-Mail/Passwort anmelden (Portal-URL und SAP-Client `201` sind vorbefüllt).
 Das Backend-Paket `brunata-nutzerportal-api` wird dabei automatisch installiert.
+Die Portal-URL muss HTTPS verwenden; Zugangsdaten werden nie an einen anderen Host
+weitergegeben.
 
 ### Test-Setup (Docker, dieses Repo)
 
@@ -68,6 +72,19 @@ Home Assistant läuft dann auf http://localhost:8123 mit der Konfiguration aus `
 **Aktualisierungsintervall** in Stunden setzen (1–168, Standard 6). Das Portal aktualisiert
 Abrechnungsdaten meist wöchentlich; kürzere Intervalle erhöhen den Aufwand auf dem Portal.
 
+## Manuelle Aktualisierung
+
+Die Aktion erwartet genau den Konfigurationseintrag, der aktualisiert werden soll:
+
+```yaml
+action: brunata_nutzerportal.update_coordinator
+data:
+  config_entry_id: "<entry-id>"
+```
+
+Die ID lässt sich im Aktionseditor über den Konfigurationseintrag-Selektor auswählen.
+Entity-Ziele und zielose Aufrufe werden nicht unterstützt.
+
 ## Projektstruktur (Entwicklung)
 
 ```
@@ -78,7 +95,8 @@ requirements.txt                          Abhängigkeiten für main.py (venv/)
 notes                                     curl-Aufzeichnungen des Portal-Login-Flows (Referenz, git-ignoriert)
 test/docker-compose.yaml                  HA-Testcontainer (mountet custom_components/ nach /config)
 test/ha-config/                           HA-Test-Config (Runtime-State ist git-ignoriert)
-test/test_coordinator_logic.py            Logik-Tests ohne HA:  venv/bin/python test/test_coordinator_logic.py
+test/test_coordinator_logic.py            Coordinator-Logiktests ohne HA
+test/test_main.py                         Sicherheits-/Parser-Tests für main.py
 logo.png                                  Logo (Flamme + Wassertropfen)
 ```
 
@@ -100,6 +118,8 @@ Probe-Skript gegen das Portal testen (Login → `get_supported_cost_types` →
 - **Sensor fehlt**: Der zugehörige Kostentyp ist für das Konto nicht im Dashboard hinterlegt
   (z. B. kein `WW`-Zähler → keine Warmwasser-Sensoren).
 - Details: `home-assistant.log` (debug) bzw. `docker logs homeassistant`.
+- Der Diagnose-Download enthält nur Status, Datensatzarten und Objektanzahlen; Zugangsdaten,
+  Portal-URLs, Namen, Kennungen sowie Verbrauchswerte werden nicht exportiert.
 
 ## Hinweise
 

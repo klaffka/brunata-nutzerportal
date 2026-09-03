@@ -6,6 +6,7 @@ import asyncio
 import sys
 import types
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 # --- stub homeassistant modules before importing the coordinator ---
@@ -18,11 +19,17 @@ ha_core = types.ModuleType("homeassistant.core")
 ha_const = types.ModuleType("homeassistant.const")
 ha_cv = types.ModuleType("homeassistant.helpers.config_validation")
 ha_er = types.ModuleType("homeassistant.helpers.entity_registry")
+ha_typing = types.ModuleType("homeassistant.helpers.typing")
 vol = types.ModuleType("voluptuous")
 
 
 class ConfigEntry:
-    pass
+    def __class_getitem__(cls, item):
+        return cls
+
+
+class ConfigEntryState(Enum):
+    LOADED = "loaded"
 
 
 class HomeAssistant:
@@ -39,10 +46,16 @@ class _Schema:
 
 
 ha_const.ATTR_ENTITY_ID = "entity_id"
+ha_const.ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ha_const.Platform = types.SimpleNamespace(SENSOR="sensor")
 ha_cv.config_entry_only_config_schema = lambda domain: _Schema()
+ha_cv.string = str
 ha_er.async_get = lambda hass: None
+ha_typing.ConfigType = dict
 vol.Schema = _Schema
+vol.Required = lambda key: key
 ha_ce.ConfigEntry = ConfigEntry
+ha_ce.ConfigEntryState = ConfigEntryState
 ha_core.HomeAssistant = HomeAssistant
 ha_core.ServiceCall = ServiceCall
 ha.config_entries = ha_ce
@@ -53,6 +66,7 @@ sys.modules["homeassistant.core"] = ha_core
 sys.modules["homeassistant.const"] = ha_const
 sys.modules["homeassistant.helpers.config_validation"] = ha_cv
 sys.modules["homeassistant.helpers.entity_registry"] = ha_er
+sys.modules["homeassistant.helpers.typing"] = ha_typing
 sys.modules["voluptuous"] = vol
 
 
@@ -64,6 +78,10 @@ class ConfigEntryNotReady(Exception):
     pass
 
 
+class ServiceValidationError(Exception):
+    pass
+
+
 class UpdateFailed(Exception):
     pass
 
@@ -72,7 +90,7 @@ class DataUpdateCoordinator:
     def __class_getitem__(cls, item):
         return cls
 
-    def __init__(self, hass, logger, *, name, update_interval):
+    def __init__(self, hass, logger, *, name, update_interval, **kwargs):
         self.hass = hass
         self.logger = logger
         self.name = name
@@ -83,6 +101,7 @@ class DataUpdateCoordinator:
 
 ha_exc.ConfigEntryAuthFailed = ConfigEntryAuthFailed
 ha_exc.ConfigEntryNotReady = ConfigEntryNotReady
+ha_exc.ServiceValidationError = ServiceValidationError
 ha_helpers.update_coordinator = ha_uc
 ha_uc.DataUpdateCoordinator = DataUpdateCoordinator
 ha_uc.UpdateFailed = UpdateFailed
@@ -100,14 +119,14 @@ import importlib
 from brunata_api.errors import LoginError
 
 mod = importlib.import_module("brunata_nutzerportal.coordinator")
-mod._DIAG_DONE = False  # reset for each run
 
 
 class FakeClient:
-    def __init__(self, supported=None, login_exc=None, ytd_exc=None, monthly_exc=None,
-                 optional_exc=None):
+    def __init__(self, supported=None, login_exc=None, supported_exc=None,
+                 ytd_exc=None, monthly_exc=None, optional_exc=None):
         self.supported = {"1": {"HZ01"}} if supported is None else supported
         self.login_exc = login_exc
+        self.supported_exc = supported_exc
         self.ytd_exc = ytd_exc
         self.monthly_exc = monthly_exc
         self.optional_exc = optional_exc
@@ -118,8 +137,8 @@ class FakeClient:
             raise self.login_exc
 
     async def get_supported_cost_types(self):
-        if self.login_exc:  # reuse as "data phase failure"
-            raise self.login_exc
+        if self.supported_exc:
+            raise self.supported_exc
         return self.supported
 
     async def get_current_consumption(self, kind):
@@ -159,7 +178,7 @@ class FakeClient:
 
 
 def make_coordinator(client):
-    return mod.BrunataCoordinator(object(), client)
+    return mod.BrunataCoordinator(object(), ConfigEntry(), client)
 
 
 results = []
@@ -183,14 +202,35 @@ async def main():
     except Exception as e:
         check("login LoginError -> ConfigEntryAuthFailed", False, repr(e))
 
+    # Non-authentication login failures remain retryable update failures.
+    c = make_coordinator(FakeClient(login_exc=OSError("network response")))
+    try:
+        await c._async_update_data()
+        check("network login failure -> UpdateFailed", False)
+    except UpdateFailed as e:
+        check("network login failure -> UpdateFailed", "OSError" in str(e), str(e))
+    except Exception as e:
+        check("network login failure -> UpdateFailed", False, repr(e))
+
+    # A LoginError after login must not start reauthentication.
+    c = make_coordinator(FakeClient(supported_exc=LoginError("dashboard failure")))
+    try:
+        await c._async_update_data()
+        check("data LoginError -> UpdateFailed", False)
+    except UpdateFailed:
+        check("data LoginError -> UpdateFailed", True)
+    except Exception as e:
+        check("data LoginError -> UpdateFailed", False, repr(e))
+
     # 2. all data fetch fail -> UpdateFailed
     c = make_coordinator(FakeClient(ytd_exc=LoginError("No dashboard period found."),
+                                    monthly_exc=LoginError("No readings."),
                                     optional_exc=LoginError("Nope.")))
     try:
         await c._async_update_data()
         check("all data fail -> UpdateFailed", False)
     except UpdateFailed as e:
-        check("all data fail -> UpdateFailed", "No dashboard period found" in str(e), str(e))
+        check("all data fail -> UpdateFailed", "LoginError" in str(e), str(e))
     except Exception as e:
         check("all data fail -> UpdateFailed", False, repr(e))
 
@@ -204,7 +244,19 @@ async def main():
     except Exception as e:
         check("partial fetch -> keeps ytd", False, repr(e))
 
-    # 4. happy path
+    # 4. inverse partial: a failed YTD request must not suppress monthly data
+    c = make_coordinator(FakeClient(ytd_exc=RuntimeError("boom")))
+    try:
+        data = await c._async_update_data()
+        check(
+            "YTD failure -> still fetches monthly",
+            "heating_ytd" not in data and "heating_monthly" in data,
+            f"keys={sorted(data.keys())}",
+        )
+    except Exception as e:
+        check("YTD failure -> still fetches monthly", False, repr(e))
+
+    # 5. happy path
     c = make_coordinator(FakeClient())
     data = await c._async_update_data()
     check("happy path -> all keys",
@@ -214,7 +266,7 @@ async def main():
     check("happy path -> has_heating True / has_hotwater False",
           data["has_heating"] is True and data["has_hotwater"] is False)
 
-    # 5. no cost types at all -> UpdateFailed
+    # 6. no cost types at all -> UpdateFailed
     c = make_coordinator(FakeClient(supported={}))
     try:
         await c._async_update_data()
@@ -222,10 +274,57 @@ async def main():
     except UpdateFailed as e:
         check("no cost types -> UpdateFailed", True, str(e))
 
-    # 6. hot water path
+    # 7. hot water path
     c = make_coordinator(FakeClient(supported={"1": {"WW01"}}))
     data = await c._async_update_data()
     check("hotwater path -> hotwater keys", "hotwater_ytd" in data and data["has_hotwater"] is True)
+
+    # 10. service requires one loaded entry and awaits its refresh
+    integration = importlib.import_module("brunata_nutzerportal")
+
+    class Services:
+        def async_register(self, domain, service, handler, **kwargs):
+            self.handler = handler
+
+    class Entries:
+        def __init__(self, entry):
+            self.entry = entry
+
+        def async_get_entry(self, entry_id):
+            return self.entry if entry_id == "valid" else None
+
+    class RefreshCoordinator:
+        def __init__(self):
+            self.refreshed = False
+
+        async def async_request_refresh(self):
+            self.refreshed = True
+
+    entry = ConfigEntry()
+    entry.domain = "brunata_nutzerportal"
+    entry.state = ConfigEntryState.LOADED
+    refresh_coordinator = RefreshCoordinator()
+    entry.runtime_data = types.SimpleNamespace(coordinator=refresh_coordinator)
+    hass = types.SimpleNamespace(services=Services(), config_entries=Entries(entry))
+    await integration.async_setup(hass, {})
+    call = types.SimpleNamespace(data={"config_entry_id": "valid"})
+    await hass.services.handler(call)
+    check("refresh service awaits loaded entry", refresh_coordinator.refreshed)
+
+    try:
+        await hass.services.handler(
+            types.SimpleNamespace(data={"config_entry_id": "missing"})
+        )
+        check("refresh service rejects missing entry", False)
+    except ServiceValidationError:
+        check("refresh service rejects missing entry", True)
+
+    entry.state = "not_loaded"
+    try:
+        await hass.services.handler(call)
+        check("refresh service rejects unloaded entry", False)
+    except ServiceValidationError:
+        check("refresh service rejects unloaded entry", True)
 
     failed = [n for n, ok, _ in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")

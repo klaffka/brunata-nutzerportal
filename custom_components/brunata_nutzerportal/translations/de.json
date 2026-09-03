@@ -21,6 +21,7 @@
     },
     "error": {
       "auth": "Anmeldung fehlgeschlagen. Bitte Zugangsdaten prüfen.",
+      "invalid_url": "Die Portal-URL muss eine gültige HTTPS-URL sein.",
       "unknown": "Unerwarteter Fehler. Siehe Logs."
     },
     "abort": {
@@ -68,7 +69,13 @@
   "services": {
     "update_coordinator": {
       "name": "Coordinator aktualisieren",
-      "description": "Erzwingt einen sofortigen Datenabruf vom Portal."
+      "description": "Erzwingt einen sofortigen Datenabruf vom Portal.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Konfigurationseintrag",
+          "description": "Das zu aktualisierende BRUdirekt-Konto."
+        }
+      }
     }
   }
 }

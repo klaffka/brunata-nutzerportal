@@ -44,7 +44,10 @@ jobs:
           EOF
 
       - name: Coordinator logic tests
-        run: python test/test_coordinator_logic.py
+        run: |
+          python test/test_coordinator_logic.py
+          python test/test_main.py
+          python test/test_url.py
 
   hassfest:
     runs-on: ubuntu-latest
@@ -65,7 +68,22 @@ jobs:
       - name: Install hassfest dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "homeassistant==2026.8.3" infrared-protocols tqdm ruff
+          pip install "homeassistant==2026.8.3" "brunata-nutzerportal-api==0.3.0" infrared-protocols tqdm ruff
+
+      - name: Import integration against pinned Home Assistant
+        run: |
+          python - <<'EOF'
+          import importlib
+          for module in (
+              "custom_components.brunata_nutzerportal",
+              "custom_components.brunata_nutzerportal.config_flow",
+              "custom_components.brunata_nutzerportal.diagnostics",
+              "custom_components.brunata_nutzerportal.sensor",
+          ):
+              importlib.import_module(module)
+          print("Integration imports against Home Assistant 2026.8.3")
+          EOF
+          python test/test_ha_compat.py
 
       - name: Run hassfest
         run: |

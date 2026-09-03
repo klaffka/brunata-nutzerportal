@@ -5,20 +5,14 @@ from datetime import timedelta
 
 from brunata_api import BrunataClient, ReadingKind
 from brunata_api.errors import LoginError
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_UPDATE_INTERVAL_HOURS
-from .debug_diag import diagnose_dashboard_batch
 
 _LOGGER = logging.getLogger(__name__)
-_DIAG_DONE = False
-
-# LoginError texts that indicate the dashboard payload is broken rather than
-# missing credentials; triggers the one-shot batch diagnostics.
-_DIAG_NEEDLES = (
-    "Dashboard batch response did not contain JSON data",
-)
 
 
 def _flatten_supported(supported: dict) -> set[str]:
@@ -35,7 +29,8 @@ def _flatten_supported(supported: dict) -> set[str]:
 class BrunataCoordinator(DataUpdateCoordinator[dict]):
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
         client: BrunataClient,
         update_hours: int = DEFAULT_UPDATE_INTERVAL_HOURS,
     ):
@@ -43,20 +38,10 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
             hass,
             _LOGGER,
             name="BRUdirekt",
+            config_entry=entry,
             update_interval=timedelta(hours=update_hours),
         )
         self.client = client
-
-    async def _maybe_diagnose(self, msg: str) -> None:
-        global _DIAG_DONE
-        if _DIAG_DONE or not any(n in msg for n in _DIAG_NEEDLES):
-            return
-        _DIAG_DONE = True
-        try:
-            diag = await diagnose_dashboard_batch(self.client)
-            _LOGGER.warning("Dashboard batch diagnostics (sanitized): %s", diag)
-        except Exception as diag_e:
-            _LOGGER.warning("Dashboard batch diagnostics failed: %s", diag_e)
 
     async def _async_update_data(self) -> dict:
         # Login phase: any LoginError here means (re)authentication problems,
@@ -64,14 +49,17 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
         try:
             await self.client.login()
         except LoginError as e:
-            raise ConfigEntryAuthFailed(str(e)) from e
+            raise ConfigEntryAuthFailed("Portal rejected the stored credentials") from e
+        except Exception as e:
+            raise UpdateFailed(f"Unable to log in ({type(e).__name__})") from e
 
         data: dict = {}
         try:
             supported = await self.client.get_supported_cost_types()
-        except LoginError as e:
-            await self._maybe_diagnose(str(e))
-            raise UpdateFailed(str(e)) from e
+        except Exception as e:
+            raise UpdateFailed(
+                f"Unable to determine supported cost types ({type(e).__name__})"
+            ) from e
 
         all_types = _flatten_supported(supported)
         has_heating = any(ct.startswith("HZ") for ct in all_types)
@@ -90,12 +78,18 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
         for kind, enabled, prefix in core_datasets:
             if not enabled:
                 continue
-            try:
-                data[f"{prefix}_ytd"] = await self.client.get_current_consumption(kind)
-                data[f"{prefix}_monthly"] = await self.client.get_readings(kind)
-            except Exception as e:
-                _LOGGER.warning("Failed to fetch %s consumption: %s", prefix, e)
-                data["errors"][prefix] = str(e)
+            for suffix, fetch in (
+                ("ytd", self.client.get_current_consumption),
+                ("monthly", self.client.get_readings),
+            ):
+                key = f"{prefix}_{suffix}"
+                try:
+                    data[key] = await fetch(kind)
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Failed to fetch %s data (%s)", key, type(e).__name__
+                    )
+                    data["errors"][key] = type(e).__name__
 
         # Optional datasets (best-effort)
         for key, fetch in (
@@ -107,14 +101,15 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
             try:
                 data[key] = await fetch()
             except Exception as e:
-                _LOGGER.debug("%s unavailable: %s", key, e)
+                _LOGGER.debug("%s unavailable (%s)", key, type(e).__name__)
+                data["errors"][key] = type(e).__name__
 
         if not any(
             k in data
             for k in ("heating_ytd", "heating_monthly", "hotwater_ytd", "hotwater_monthly")
         ):
-            first_err = next(iter(data["errors"].values()), "unknown error")
-            await self._maybe_diagnose(first_err)
-            raise UpdateFailed(f"No consumption data available: {first_err}") from None
+            error_types = sorted(set(data["errors"].values()))
+            detail = ", ".join(error_types) if error_types else "no supported dataset"
+            raise UpdateFailed(f"No consumption data available ({detail})")
 
         return data

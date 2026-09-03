@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_CONFIG_ENTRY_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
 from .client_factory import async_create_brunata_client
 from .const import (
@@ -22,44 +26,35 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import BrunataCoordinator
+from .models import BrunataConfigEntry, BrunataRuntimeData
+from .url import config_entry_unique_id, normalize_portal_url
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_UPDATE_COORDINATOR = "update_coordinator"
 
 
-async def async_setup(hass: HomeAssistant) -> bool:
-    hass.data.setdefault(DOMAIN, {})
-
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def _async_handle_update_service(call: ServiceCall) -> None:
-        target_entities = call.data.get(ATTR_ENTITY_ID)
+        entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError("BRUdirekt config entry not found")
+        if entry.state is not ConfigEntryState.LOADED:
+            raise ServiceValidationError("BRUdirekt config entry is not loaded")
 
-        if not target_entities:
-            entry_ids = {
-                entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)
-            }
-        else:
-            entry_ids = set()
-            entity_registry = er.async_get(hass)
-            for entity_id in target_entities:
-                registered = entity_registry.async_get(entity_id)
-                if registered and registered.platform == DOMAIN:
-                    entry_ids.add(registered.config_entry_id)
-
-        for entry_id in entry_ids:
-            data: dict[str, Any] | None = hass.data[DOMAIN].get(entry_id)
-            if data:
-                data["coordinator"].async_request_refresh()
+        runtime = cast(BrunataConfigEntry, entry).runtime_data
+        await runtime.coordinator.async_request_refresh()
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_UPDATE_COORDINATOR,
         _async_handle_update_service,
-        schema=vol.Schema({}),
+        schema=vol.Schema({vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string}),
     )
     return True
 
@@ -68,7 +63,29 @@ async def _async_update_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate existing entries to the host-scoped account unique ID."""
+    if entry.version > 2:
+        return False
+    if entry.version < 2:
+        data = dict(entry.data)
+        try:
+            data[CONF_BASE_URL] = normalize_portal_url(
+                data[CONF_BASE_URL], require_https=False
+            )
+            unique_id = config_entry_unique_id(
+                data[CONF_BASE_URL], data[CONF_SAP_CLIENT], data[CONF_USERNAME]
+            )
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.error("Unable to migrate malformed BRUdirekt config entry")
+            return False
+        hass.config_entries.async_update_entry(
+            entry, data=data, unique_id=unique_id, version=2
+        )
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: BrunataConfigEntry) -> bool:
     client = await async_create_brunata_client(
         hass,
         base_url=entry.data[CONF_BASE_URL],
@@ -78,7 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     update_hours = entry.options.get(CONF_UPDATE_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS)
-    coordinator = BrunataCoordinator(hass, client, update_hours=update_hours)
+    coordinator = BrunataCoordinator(hass, entry, client, update_hours=update_hours)
 
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -87,32 +104,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
     except Exception as exc:
         await client.aclose()
-        raise ConfigEntryNotReady(f"Unable to fetch Brunata data: {exc}") from exc
+        raise ConfigEntryNotReady(
+            f"Unable to fetch Brunata data ({type(exc).__name__})"
+        ) from exc
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "client": client,
-        "coordinator": coordinator,
-    }
+    entry.runtime_data = BrunataRuntimeData(client=client, coordinator=coordinator)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
 
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
         await client.aclose()
         raise
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: BrunataConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        client = data.get("client")
-        if client:
-            await client.aclose()
+        await entry.runtime_data.client.aclose()
 
     return unload_ok

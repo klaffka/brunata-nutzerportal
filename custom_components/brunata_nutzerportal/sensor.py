@@ -7,12 +7,15 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.components.sensor.const import EntityCategory
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .models import BrunataConfigEntry
 
 
 def _latest(series):
@@ -36,70 +39,78 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
     )
 
 
-async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> None:
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    data = coordinator.data or {}
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: BrunataConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up sensors and discover datasets added by later refreshes."""
+    coordinator = entry.runtime_data.coordinator
+    known_unique_ids: set[str] = set()
 
-    has_heating = bool(data.get("has_heating", False))
-    has_hotwater = bool(data.get("has_hotwater", False))
+    @callback
+    def _discover_entities() -> None:
+        data = coordinator.data or {}
+        entities: list[SensorEntity] = []
 
-    entities: list[SensorEntity] = []
-
-    # Basic
-    if has_heating:
-        entities += [
-            BrunataYtdSensor(coordinator, entry, "heating_ytd"),
-            BrunataLatestMonthlySensor(coordinator, entry, "heating_monthly"),
-        ]
-    if has_hotwater:
-        entities += [
-            BrunataYtdSensor(coordinator, entry, "hotwater_ytd"),
-            BrunataLatestMonthlySensor(coordinator, entry, "hotwater_monthly"),
-        ]
-
-    # Meter readings: one per cost_type
-    meter = data.get("meter_readings") or {}
-    if isinstance(meter, dict):
-        for ct in sorted(meter.keys()):
-            v = meter.get(ct)
-            if v is None:
-                continue
-            entities.append(BrunataMeterSensor(coordinator, entry, ct))
-
-    # Comparison: state = your_value
-    comp = data.get("comparison") or {}
-    if isinstance(comp, dict):
-        for ct in sorted(comp.keys()):
-            entities.append(BrunataComparisonSensor(coordinator, entry, ct))
-
-    # Forecast: state = forecast
-    fc = data.get("forecast") or {}
-    if isinstance(fc, dict):
-        for ct in sorted(fc.keys()):
-            entities.append(BrunataForecastSensor(coordinator, entry, ct))
-
-    # Rooms: one per (cost_type, room_id)
-    rooms = data.get("rooms") or {}
-    if isinstance(rooms, dict):
-        for ct, lst in rooms.items():
-            if not isinstance(lst, list):
-                continue
-            for r in lst:
-                room_id = getattr(r, "room_id", None)
-                room_name = getattr(r, "room_name", None)
-                if not room_id or not room_name:
-                    continue
-                entities.append(
-                    BrunataRoomSensor(
-                        coordinator,
-                        entry,
-                        cost_type=str(ct),
-                        room_id=str(room_id),
-                        room_name=room_name,
+        for prefix in ("heating", "hotwater"):
+            if data.get(f"has_{prefix}") or any(
+                f"{prefix}_{suffix}" in data for suffix in ("ytd", "monthly")
+            ):
+                entities.extend(
+                    (
+                        BrunataYtdSensor(coordinator, entry, f"{prefix}_ytd"),
+                        BrunataLatestMonthlySensor(
+                            coordinator, entry, f"{prefix}_monthly"
+                        ),
                     )
                 )
 
-    async_add_entities(entities)
+        for data_key, sensor_cls in (
+            ("meter_readings", BrunataMeterSensor),
+            ("comparison", BrunataComparisonSensor),
+            ("forecast", BrunataForecastSensor),
+        ):
+            values = data.get(data_key) or {}
+            if isinstance(values, dict):
+                entities.extend(
+                    sensor_cls(coordinator, entry, str(cost_type))
+                    for cost_type, value in sorted(values.items())
+                    if value is not None
+                )
+
+        rooms = data.get("rooms") or {}
+        if isinstance(rooms, dict):
+            for cost_type, room_list in rooms.items():
+                if not isinstance(room_list, list):
+                    continue
+                for room in room_list:
+                    room_id = getattr(room, "room_id", None)
+                    room_name = getattr(room, "room_name", None)
+                    if room_id and room_name:
+                        entities.append(
+                            BrunataRoomSensor(
+                                coordinator,
+                                entry,
+                                cost_type=str(cost_type),
+                                room_id=str(room_id),
+                                room_name=str(room_name),
+                            )
+                        )
+
+        new_entities = [
+            entity
+            for entity in entities
+            if entity.unique_id not in known_unique_ids
+        ]
+        if new_entities:
+            known_unique_ids.update(
+                entity.unique_id for entity in new_entities if entity.unique_id is not None
+            )
+            async_add_entities(new_entities)
+
+    _discover_entities()
+    entry.async_on_unload(coordinator.async_add_listener(_discover_entities))
 
 
 class _BrunataBase(CoordinatorEntity, SensorEntity):

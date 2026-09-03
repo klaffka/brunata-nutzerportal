@@ -1,3 +1,7 @@
 update_coordinator:
-  target:
-    entity: []
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: brunata_nutzerportal

@@ -83,7 +83,7 @@ jobs:
               importlib.import_module(module)
           print("Integration imports against Home Assistant 2026.8.3")
           EOF
-          python test/test_ha_compat.py
+          PYTHONPATH=. python test/test_ha_compat.py
 
       - name: Run hassfest
         run: |

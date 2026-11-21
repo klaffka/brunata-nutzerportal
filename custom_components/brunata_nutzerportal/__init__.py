@@ -86,36 +86,45 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BrunataConfigEntry) -> bool:
-    client = await async_create_brunata_client(
-        hass,
-        base_url=entry.data[CONF_BASE_URL],
-        username=entry.data[CONF_USERNAME],
-        password=entry.data[CONF_PASSWORD],
-        sap_client=entry.data[CONF_SAP_CLIENT],
-    )
+    async def _create_client():
+        return await async_create_brunata_client(
+            hass,
+            base_url=entry.data[CONF_BASE_URL],
+            username=entry.data[CONF_USERNAME],
+            password=entry.data[CONF_PASSWORD],
+            sap_client=entry.data[CONF_SAP_CLIENT],
+        )
+
+    client = await _create_client()
 
     update_hours = entry.options.get(CONF_UPDATE_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS)
-    coordinator = BrunataCoordinator(hass, entry, client, update_hours=update_hours)
+    coordinator = BrunataCoordinator(
+        hass,
+        entry,
+        client,
+        update_hours=update_hours,
+        client_factory=_create_client,
+    )
 
     try:
         await coordinator.async_config_entry_first_refresh()
     except ConfigEntryAuthFailed:
-        await client.aclose()
+        await coordinator.client.aclose()
         raise
     except Exception as exc:
-        await client.aclose()
+        await coordinator.client.aclose()
         raise ConfigEntryNotReady(
             f"Unable to fetch Brunata data ({type(exc).__name__})"
         ) from exc
 
-    entry.runtime_data = BrunataRuntimeData(client=client, coordinator=coordinator)
+    entry.runtime_data = BrunataRuntimeData(coordinator=coordinator)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
 
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
-        await client.aclose()
+        await coordinator.client.aclose()
         raise
 
     return True
@@ -125,6 +134,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: BrunataConfigEntry) -> 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        await entry.runtime_data.client.aclose()
+        await entry.runtime_data.coordinator.client.aclose()
 
     return unload_ok

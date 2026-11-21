@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 from brunata_api import BrunataClient, ReadingKind
@@ -33,6 +34,7 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
         entry: ConfigEntry,
         client: BrunataClient,
         update_hours: int = DEFAULT_UPDATE_INTERVAL_HOURS,
+        client_factory: Callable[[], Awaitable[BrunataClient]] | None = None,
     ):
         super().__init__(
             hass,
@@ -42,12 +44,45 @@ class BrunataCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(hours=update_hours),
         )
         self.client = client
+        self._client_factory = client_factory
+        self._client_used = False
+
+    async def _async_fresh_client(self) -> None:
+        """Replace a client that already attempted a login with a new one.
+
+        The portal rejects a second login on a client that still carries the
+        previous SAP session cookies, cached CSRF tokens and basic-auth state:
+        the credentials are reported as wrong although they are fine, and only
+        a reload (a new client) cures it. Every login therefore gets a new
+        client, so no session state leaks from one poll into the next.
+        """
+        if self._client_factory is None or not self._client_used:
+            return
+        old = self.client
+        self.client = await self._client_factory()
+        try:
+            await old.aclose()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to close the previous client", exc_info=True)
+
+    async def _async_login(self) -> None:
+        """Log in with a clean session; retry once before giving up."""
+        await self._async_fresh_client()
+        self._client_used = True
+        try:
+            await self.client.login()
+        except LoginError as first:
+            if self._client_factory is None:
+                raise
+            _LOGGER.debug("Login rejected (%s), retrying with a new session", first)
+            await self._async_fresh_client()
+            await self.client.login()
 
     async def _async_update_data(self) -> dict:
         # Login phase: any LoginError here means (re)authentication problems,
         # so map it to ConfigEntryAuthFailed and let HA trigger re-auth.
         try:
-            await self.client.login()
+            await self._async_login()
         except LoginError as e:
             raise ConfigEntryAuthFailed("Portal rejected the stored credentials") from e
         except Exception as e:

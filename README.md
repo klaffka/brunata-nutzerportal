@@ -32,14 +32,32 @@ Jahresprognose und Raumaufschlüsselung.
 
 ## Installation
 
-### HACS (empfohlen)
+### Marketplace (ab Home Assistant 2026.11, empfohlen)
 
-1. HACS: *Erweitert → Andere Repositories hinzufügen* →
-   `https://github.com/klaffka/brunata-nutzerportal` (Kategorie: *Integration*).
+Seit HA 2026.11 ist der Marketplace eingebaut und ersetzt HACS.
+
+1. Als Administrator *Einstellungen → Marketplace* öffnen und den Hinweis bestätigen.
+2. Oben rechts *Add from link* (Link hinzufügen) wählen und
+   `https://github.com/klaffka/brunata-nutzerportal` eingeben. Bei Aufforderung GitHub verbinden.
+3. Repository hinzufügen; falls nach dem Typ gefragt wird, *Integration* wählen.
+4. **BRUdirekt (Brunata München)** öffnen und installieren.
+5. Den Einrichtungsdialog ausfüllen (siehe unten). Falls HA einen Neustart verlangt,
+   diesen vorher durchführen.
+
+Bestehende HACS-Installationen und benutzerdefinierte Repositories werden beim HA-Upgrade
+automatisch übernommen. Eine Neuinstallation von BRUdirekt ist dafür nicht nötig.
+Updates erscheinen unter *Einstellungen → Updates*; nach einem Integrationsupdate HA neu starten.
+
+Quelle: [Offizielle Marketplace-Anleitung](https://www.home-assistant.io/integrations/marketplace/).
+
+### HACS (Home Assistant vor 2026.11)
+
+1. HACS öffnen: *⋮ → Benutzerdefinierte Repositories* (*Custom repositories*) →
+   `https://github.com/klaffka/brunata-nutzerportal` hinzufügen (Typ: *Integration*).
 2. Integration **BRUdirekt (Brunata München)** installieren und HA neu starten.
 3. Integration einrichten (siehe unten).
 
-### Manuell (ohne HACS)
+### Manuell (ohne Marketplace/HACS)
 
 1. Den Ordner `brunata_nutzerportal` aus `custom_components/` nach
    `config/custom_components/` kopieren.
@@ -47,7 +65,8 @@ Jahresprognose und Raumaufschlüsselung.
 
 ### Integration einrichten
 
-Unter *Einstellungen → Geräte & Dienste → Integrationen hinzufügen* **BRUdirekt (Brunata München)**
+Falls der Marketplace die Einrichtung nicht bereits geöffnet hat, unter
+*Einstellungen → Geräte & Dienste → Integration hinzufügen* **BRUdirekt (Brunata München)**
 auswählen und mit E-Mail/Passwort anmelden (Portal-URL und SAP-Client `201` sind vorbefüllt).
 Das Backend-Paket `brunata-nutzerportal-api` wird dabei automatisch installiert.
 Die Portal-URL muss HTTPS verwenden; Zugangsdaten werden nie an einen anderen Host
@@ -89,7 +108,7 @@ Entity-Ziele und zielose Aufrufe werden nicht unterstützt.
 
 ```
 custom_components/brunata_nutzerportal/   ← die Integration (HACS-Layout, Single Source of Truth)
-hacs.json                                 HACS-Metadaten
+hacs.json                                 Marketplace-/HACS-Metadaten
 main.py                                   Standalone-Login-Skript (SAP-$batch-Flow) gegen das echte Portal
 requirements.txt                          Abhängigkeiten für main.py (venv/)
 notes                                     curl-Aufzeichnungen des Portal-Login-Flows (Referenz, git-ignoriert)
@@ -120,6 +139,15 @@ Probe-Skript gegen das Portal testen (Login → `get_supported_cost_types` →
 - Details: `home-assistant.log` (debug) bzw. `docker logs homeassistant`.
 - Der Diagnose-Download enthält nur Status, Datensatzarten und Objektanzahlen; Zugangsdaten,
   Portal-URLs, Namen, Kennungen sowie Verbrauchswerte werden nicht exportiert.
+
+## Danksagung
+
+Diese Integration baut auf [brunata-api](https://github.com/fjfricke/brunata-api)
+von [Felix Fricke (@fjfricke)](https://github.com/fjfricke) auf, veröffentlicht als
+[`brunata-nutzerportal-api`](https://pypi.org/project/brunata-nutzerportal-api/).
+Die Bibliothek übernimmt die Anmeldung und den Datenabruf am Brunata-Portal und bildet
+damit die Grundlage unserer Home-Assistant-Anbindung. Vielen Dank für diese Arbeit
+und die Bereitstellung als Open Source!
 
 ## Hinweise
 

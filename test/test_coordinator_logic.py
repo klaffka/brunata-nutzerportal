@@ -326,6 +326,76 @@ async def main():
     except ServiceValidationError:
         check("refresh service rejects unloaded entry", True)
 
+    # 11. every poll logs in with a fresh client (stale session -> bogus "bad credentials")
+    class SessionClient(FakeClient):
+        created = 0
+
+        def __init__(self, **kw):
+            super().__init__(**kw)
+            SessionClient.created += 1
+            self.logins = 0
+            self.closed = False
+
+        async def login(self):
+            self.logins += 1
+            if self.logins > 1:  # a reused session is rejected by the portal
+                raise LoginError("Empty UserContextSet results (login likely failed).")
+
+        async def aclose(self):
+            self.closed = True
+
+    async def factory():
+        return SessionClient()
+
+    first = SessionClient()
+    c = mod.BrunataCoordinator(object(), ConfigEntry(), first, client_factory=factory)
+    await c._async_update_data()
+    await c._async_update_data()
+    await c._async_update_data()
+    check("repeat polls use fresh clients, no auth failure",
+          c.client is not first and first.closed and c.client.logins == 1,
+          f"created={SessionClient.created}")
+
+    # 12. a transient rejection is retried once with a new session
+    state = {"n": 0}
+
+    class FlakyClient(FakeClient):
+        async def login(self):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise LoginError("transient")
+
+        async def aclose(self):
+            pass
+
+    async def flaky_factory():
+        return FlakyClient()
+
+    c = mod.BrunataCoordinator(object(), ConfigEntry(), FlakyClient(), client_factory=flaky_factory)
+    try:
+        await c._async_update_data()
+        check("transient login rejection is retried", state["n"] == 2)
+    except Exception as e:
+        check("transient login rejection is retried", False, repr(e))
+
+    # 13. credentials that stay rejected still trigger reauth
+    class BadClient(FakeClient):
+        async def login(self):
+            raise LoginError("rejected")
+
+        async def aclose(self):
+            pass
+
+    async def bad_factory():
+        return BadClient()
+
+    c = mod.BrunataCoordinator(object(), ConfigEntry(), BadClient(), client_factory=bad_factory)
+    try:
+        await c._async_update_data()
+        check("persistent rejection -> ConfigEntryAuthFailed", False)
+    except ConfigEntryAuthFailed:
+        check("persistent rejection -> ConfigEntryAuthFailed", True)
+
     failed = [n for n, ok, _ in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
     sys.exit(1 if failed else 0)
